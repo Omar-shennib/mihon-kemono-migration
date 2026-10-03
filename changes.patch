@@ -1,0 +1,1268 @@
+diff --git a/app/src/main/java/eu/kanade/presentation/browse/components/BrowseSourceToolbar.kt b/app/src/main/java/eu/kanade/presentation/browse/components/BrowseSourceToolbar.kt
+index cf9c608..940e9a9 100644
+--- a/app/src/main/java/eu/kanade/presentation/browse/components/BrowseSourceToolbar.kt
++++ b/app/src/main/java/eu/kanade/presentation/browse/components/BrowseSourceToolbar.kt
+@@ -35,6 +35,7 @@ fun BrowseSourceToolbar(
+     onHelpClick: () -> Unit,
+     onSettingsClick: () -> Unit,
+     onSearch: (String) -> Unit,
++    onAddAllToLibraryClick: (() -> Unit)? = null,
+     scrollBehavior: TopAppBarScrollBehavior? = null,
+ ) {
+     // Avoid capturing unstable source in actions lambda
+@@ -80,6 +81,14 @@ fun BrowseSourceToolbar(
+                             ),
+                         )
+                     }
++                    if (onAddAllToLibraryClick != null) {
++                        add(
++                            AppBar.OverflowAction(
++                                title = stringResource(MR.strings.action_add_all_to_library),
++                                onClick = onAddAllToLibraryClick,
++                            ),
++                        )
++                    }
+                     if (isConfigurableSource) {
+                         add(
+                             AppBar.OverflowAction(
+diff --git a/app/src/main/java/eu/kanade/presentation/manga/MangaScreen.kt b/app/src/main/java/eu/kanade/presentation/manga/MangaScreen.kt
+index 3ffd366..dde8e92 100644
+--- a/app/src/main/java/eu/kanade/presentation/manga/MangaScreen.kt
++++ b/app/src/main/java/eu/kanade/presentation/manga/MangaScreen.kt
+@@ -86,6 +86,7 @@ fun MangaScreen(
+     chapterSwipeStartAction: LibraryPreferences.ChapterSwipeAction,
+     chapterSwipeEndAction: LibraryPreferences.ChapterSwipeAction,
+     navigateUp: () -> Unit,
++    onChapterSearchQueryChange: (String?) -> Unit,
+     onChapterClicked: (Chapter) -> Unit,
+     onDownloadChapter: ((List<ChapterList.Item>, ChapterDownloadAction) -> Unit)?,
+     onAddToLibraryClicked: () -> Unit,
+@@ -141,6 +142,7 @@ fun MangaScreen(
+             chapterSwipeStartAction = chapterSwipeStartAction,
+             chapterSwipeEndAction = chapterSwipeEndAction,
+             navigateUp = navigateUp,
++            onChapterSearchQueryChange = onChapterSearchQueryChange,
+             onChapterClicked = onChapterClicked,
+             onDownloadChapter = onDownloadChapter,
+             onAddToLibraryClicked = onAddToLibraryClicked,
+@@ -177,6 +179,7 @@ fun MangaScreen(
+             chapterSwipeEndAction = chapterSwipeEndAction,
+             nextUpdate = nextUpdate,
+             navigateUp = navigateUp,
++            onChapterSearchQueryChange = onChapterSearchQueryChange,
+             onChapterClicked = onChapterClicked,
+             onDownloadChapter = onDownloadChapter,
+             onAddToLibraryClicked = onAddToLibraryClicked,
+@@ -216,6 +219,7 @@ private fun MangaScreenSmallImpl(
+     chapterSwipeStartAction: LibraryPreferences.ChapterSwipeAction,
+     chapterSwipeEndAction: LibraryPreferences.ChapterSwipeAction,
+     navigateUp: () -> Unit,
++    onChapterSearchQueryChange: (String?) -> Unit,
+     onChapterClicked: (Chapter) -> Unit,
+     onDownloadChapter: ((List<ChapterList.Item>, ChapterDownloadAction) -> Unit)?,
+     onAddToLibraryClicked: () -> Unit,
+@@ -270,6 +274,9 @@ private fun MangaScreenSmallImpl(
+     BackHandler(enabled = isAnySelected) {
+         onAllChapterSelected(false)
+     }
++    BackHandler(enabled = !isAnySelected && state.chapterSearchQuery != null) {
++        onChapterSearchQueryChange(null)
++    }
+ 
+     Scaffold(
+         topBar = {
+@@ -301,6 +308,8 @@ private fun MangaScreenSmallImpl(
+                 onClickRefresh = onRefresh,
+                 onClickMigrate = onMigrateClicked,
+                 onClickEditNotes = onEditNotesClicked,
++                searchQuery = state.chapterSearchQuery,
++                onChangeSearchQuery = onChapterSearchQueryChange,
+                 actionModeCounter = selectedChapterCount,
+                 onCancelActionMode = { onAllChapterSelected(false) },
+                 onSelectAll = { onAllChapterSelected(true) },
+@@ -458,6 +467,7 @@ fun MangaScreenLargeImpl(
+     chapterSwipeStartAction: LibraryPreferences.ChapterSwipeAction,
+     chapterSwipeEndAction: LibraryPreferences.ChapterSwipeAction,
+     navigateUp: () -> Unit,
++    onChapterSearchQueryChange: (String?) -> Unit,
+     onChapterClicked: (Chapter) -> Unit,
+     onDownloadChapter: ((List<ChapterList.Item>, ChapterDownloadAction) -> Unit)?,
+     onAddToLibraryClicked: () -> Unit,
+@@ -518,6 +528,9 @@ fun MangaScreenLargeImpl(
+     BackHandler(enabled = isAnySelected) {
+         onAllChapterSelected(false)
+     }
++    BackHandler(enabled = !isAnySelected && state.chapterSearchQuery != null) {
++        onChapterSearchQueryChange(null)
++    }
+ 
+     Scaffold(
+         topBar = {
+@@ -536,6 +549,8 @@ fun MangaScreenLargeImpl(
+                 onClickRefresh = onRefresh,
+                 onClickMigrate = onMigrateClicked,
+                 onClickEditNotes = onEditNotesClicked,
++                searchQuery = state.chapterSearchQuery,
++                onChangeSearchQuery = onChapterSearchQueryChange,
+                 onCancelActionMode = { onAllChapterSelected(false) },
+                 actionModeCounter = selectedChapterCount,
+                 onSelectAll = { onAllChapterSelected(true) },
+diff --git a/app/src/main/java/eu/kanade/presentation/manga/components/MangaToolbar.kt b/app/src/main/java/eu/kanade/presentation/manga/components/MangaToolbar.kt
+index 7bdc921..34c0a82 100644
+--- a/app/src/main/java/eu/kanade/presentation/manga/components/MangaToolbar.kt
++++ b/app/src/main/java/eu/kanade/presentation/manga/components/MangaToolbar.kt
+@@ -15,11 +15,13 @@ import eu.kanade.presentation.components.AppBar
+ import eu.kanade.presentation.components.AppBarActions
+ import eu.kanade.presentation.components.AppBarTitle
+ import eu.kanade.presentation.components.DownloadDropdownMenu
++import eu.kanade.presentation.components.SearchToolbar
+ import eu.kanade.presentation.manga.DownloadAction
+ import mihon.icons.materialsymbols.MaterialSymbols
+ import mihon.icons.materialsymbols.rounded.Download
+ import mihon.icons.materialsymbols.rounded.FilterList
+ import mihon.icons.materialsymbols.rounded.FlipToBack
++import mihon.icons.materialsymbols.rounded.Search
+ import mihon.icons.materialsymbols.rounded.SelectAll
+ import tachiyomi.i18n.MR
+ import tachiyomi.presentation.core.i18n.stringResource
+@@ -38,6 +40,10 @@ fun MangaToolbar(
+     onClickMigrate: (() -> Unit)?,
+     onClickEditNotes: () -> Unit,
+ 
++    // Chapter search; null when closed
++    searchQuery: String?,
++    onChangeSearchQuery: (String?) -> Unit,
++
+     // For action mode
+     actionModeCounter: Int,
+     onCancelActionMode: () -> Unit,
+@@ -49,6 +55,14 @@ fun MangaToolbar(
+     modifier: Modifier = Modifier,
+ ) {
+     val isActionMode = actionModeCounter > 0
++    if (searchQuery != null && !isActionMode) {
++        SearchToolbar(
++            searchQuery = searchQuery,
++            onChangeSearchQuery = onChangeSearchQuery,
++            modifier = modifier,
++        )
++        return
++    }
+     AppBar(
+         titleContent = {
+             if (isActionMode) {
+@@ -93,6 +107,13 @@ fun MangaToolbar(
+                         )
+                         return@buildList
+                     }
++                    add(
++                        AppBar.Action(
++                            title = stringResource(MR.strings.action_search),
++                            icon = MaterialSymbols.Rounded.Search,
++                            onClick = { onChangeSearchQuery("") },
++                        ),
++                    )
+                     if (onClickDownload != null) {
+                         add(
+                             AppBar.Action(
+diff --git a/app/src/main/java/eu/kanade/tachiyomi/ui/browse/migration/search/MigrateSearchViewModel.kt b/app/src/main/java/eu/kanade/tachiyomi/ui/browse/migration/search/MigrateSearchViewModel.kt
+index 76d4376..00e2355 100644
+--- a/app/src/main/java/eu/kanade/tachiyomi/ui/browse/migration/search/MigrateSearchViewModel.kt
++++ b/app/src/main/java/eu/kanade/tachiyomi/ui/browse/migration/search/MigrateSearchViewModel.kt
+@@ -11,9 +11,11 @@ import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactoryKey
+ import eu.kanade.domain.source.service.SourcePreferences
+ import eu.kanade.tachiyomi.extension.ExtensionManager
+ import eu.kanade.tachiyomi.source.Source
++import eu.kanade.tachiyomi.source.model.SManga
+ import eu.kanade.tachiyomi.ui.browse.source.globalsearch.SearchItemResult
+ import eu.kanade.tachiyomi.ui.browse.source.globalsearch.SearchViewModel
+ import kotlinx.coroutines.launch
++import mihon.feature.migration.list.findCreatorByUrl
+ import tachiyomi.domain.manga.interactor.GetManga
+ import tachiyomi.domain.manga.interactor.NetworkToLocalManga
+ import tachiyomi.domain.source.service.SourceManager
+@@ -67,4 +69,13 @@ class MigrateSearchViewModel(
+     override suspend fun getEnabledSources(): List<Source> {
+         return migrationSources.mapNotNull { sourceManager.get(it) }
+     }
++
++    override suspend fun searchSource(source: Source, query: String): List<SManga> {
++        // Untouched initial query: find Kemono-style creators by URL, since names differ between archives
++        val from = state.value.from
++        if (from != null && query == from.title && source.id != from.source) {
++            source.findCreatorByUrl(from.url)?.let { return listOf(it) }
++        }
++        return super.searchSource(source, query)
++    }
+ }
+diff --git a/app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/browse/BrowseSourceScreen.kt b/app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/browse/BrowseSourceScreen.kt
+index ae247b5..54705ce 100644
+--- a/app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/browse/BrowseSourceScreen.kt
++++ b/app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/browse/BrowseSourceScreen.kt
+@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Row
+ import androidx.compose.foundation.layout.padding
+ import androidx.compose.foundation.layout.size
+ import androidx.compose.foundation.rememberScrollState
++import androidx.compose.material3.AlertDialog
++import androidx.compose.material3.CircularProgressIndicator
+ import androidx.compose.material3.FilterChip
+ import androidx.compose.material3.FilterChipDefaults
+ import androidx.compose.material3.HorizontalDivider
+@@ -16,18 +18,22 @@ import androidx.compose.material3.MaterialTheme
+ import androidx.compose.material3.SnackbarHost
+ import androidx.compose.material3.SnackbarHostState
+ import androidx.compose.material3.Text
++import androidx.compose.material3.TextButton
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.LaunchedEffect
+ import androidx.compose.runtime.collectAsState
+ import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.remember
+ import androidx.compose.runtime.rememberCoroutineScope
++import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+ import androidx.compose.ui.input.pointer.pointerInput
+ import androidx.compose.ui.platform.LocalConfiguration
++import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.platform.LocalHapticFeedback
+ import androidx.compose.ui.platform.LocalUriHandler
++import androidx.compose.ui.unit.dp
+ import cafe.adriel.voyager.navigator.LocalNavigator
+ import cafe.adriel.voyager.navigator.currentOrThrow
+ import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
+@@ -55,6 +61,7 @@ import mihon.icons.materialsymbols.rounded.NewReleases
+ import mihon.icons.materialsymbols.roundedfilled.Favorite
+ import mihon.presentation.core.util.collectAsLazyPagingItems
+ import tachiyomi.core.common.Constants
++import tachiyomi.core.common.i18n.stringResource
+ import tachiyomi.core.common.util.lang.launchIO
+ import tachiyomi.domain.source.model.StubSource
+ import tachiyomi.i18n.MR
+@@ -142,6 +149,7 @@ data class BrowseSourceScreen(
+                         onHelpClick = onHelpClick,
+                         onSettingsClick = { navigator.push(SourcePreferencesScreen(sourceId)) },
+                         onSearch = viewModel::search,
++                        onAddAllToLibraryClick = viewModel::loadAllForLibrary.takeIf { state.listing is Listing.Search },
+                     )
+ 
+                     Row(
+@@ -289,9 +297,50 @@ data class BrowseSourceScreen(
+                     },
+                 )
+             }
++            is BrowseSourceViewModel.Dialog.AddAllLoading -> {
++                AlertDialog(
++                    onDismissRequest = {},
++                    confirmButton = {},
++                    dismissButton = {
++                        TextButton(onClick = viewModel::cancelLoadAll) {
++                            Text(stringResource(MR.strings.action_cancel))
++                        }
++                    },
++                    text = {
++                        Row(verticalAlignment = Alignment.CenterVertically) {
++                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
++                            Text(
++                                text = stringResource(MR.strings.add_all_loading, dialog.count),
++                                modifier = Modifier.padding(start = MaterialTheme.padding.medium),
++                            )
++                        }
++                    },
++                )
++            }
++            is BrowseSourceViewModel.Dialog.AddAllToLibrary -> {
++                ChangeCategoryDialog(
++                    initialSelection = dialog.initialSelection,
++                    onDismissRequest = onDismissRequest,
++                    onEditCategories = { navigator.push(CategoryScreen()) },
++                    onConfirm = { include, _ -> viewModel.addAllToLibrary(dialog.mangas, include) },
++                )
++            }
+             else -> {}
+         }
+ 
++        val context = LocalContext.current
++        LaunchedEffect(Unit) {
++            viewModel.addAllEvents.receiveAsFlow().collectLatest { event ->
++                val message = when (event) {
++                    is BrowseSourceViewModel.AddAllEvent.Added ->
++                        context.stringResource(MR.strings.add_all_added, event.count)
++                    is BrowseSourceViewModel.AddAllEvent.Failed ->
++                        context.stringResource(MR.strings.add_all_failed, event.message)
++                }
++                snackbarHostState.showSnackbar(message)
++            }
++        }
++
+         LaunchedEffect(Unit) {
+             queryEvent.receiveAsFlow()
+                 .collectLatest {
+diff --git a/app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/browse/BrowseSourceViewModel.kt b/app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/browse/BrowseSourceViewModel.kt
+index eecef47..857e602 100644
+--- a/app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/browse/BrowseSourceViewModel.kt
++++ b/app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/browse/BrowseSourceViewModel.kt
+@@ -29,6 +29,9 @@ import eu.kanade.tachiyomi.data.cache.CoverCache
+ import eu.kanade.tachiyomi.source.Source
+ import eu.kanade.tachiyomi.source.model.FilterList
+ import eu.kanade.tachiyomi.util.removeCovers
++import kotlinx.coroutines.CancellationException
++import kotlinx.coroutines.Job
++import kotlinx.coroutines.channels.Channel
+ import kotlinx.coroutines.flow.MutableStateFlow
+ import kotlinx.coroutines.flow.SharingStarted
+ import kotlinx.coroutines.flow.StateFlow
+@@ -41,6 +44,7 @@ import kotlinx.coroutines.flow.map
+ import kotlinx.coroutines.flow.stateIn
+ import kotlinx.coroutines.flow.update
+ import kotlinx.coroutines.launch
++import mihon.domain.manga.model.toDomainManga
+ import tachiyomi.core.common.preference.CheckboxState
+ import tachiyomi.core.common.preference.mapAsCheckboxState
+ import tachiyomi.core.common.util.lang.launchIO
+@@ -51,6 +55,7 @@ import tachiyomi.domain.chapter.interactor.SetMangaDefaultChapterFlags
+ import tachiyomi.domain.library.service.LibraryPreferences
+ import tachiyomi.domain.manga.interactor.GetDuplicateLibraryManga
+ import tachiyomi.domain.manga.interactor.GetManga
++import tachiyomi.domain.manga.interactor.NetworkToLocalManga
+ import tachiyomi.domain.manga.model.Manga
+ import tachiyomi.domain.manga.model.MangaUpdate
+ import tachiyomi.domain.manga.model.MangaWithChapterCount
+@@ -76,6 +81,7 @@ class BrowseSourceViewModel(
+     private val getManga: GetManga,
+     private val updateManga: UpdateManga,
+     private val addTracks: AddTracks,
++    private val networkToLocalManga: NetworkToLocalManga,
+     getIncognitoState: GetIncognitoState,
+ ) : ViewModel() {
+ 
+@@ -315,6 +321,73 @@ class BrowseSourceViewModel(
+         }
+     }
+ 
++    private var addAllJob: Job? = null
++    val addAllEvents = Channel<AddAllEvent>(Channel.UNLIMITED)
++
++    /**
++     * Loads every result of the current search (e.g. a source's "favorites only" filter),
++     * then asks which categories to add the ones not yet in the library to.
++     */
++    // ponytail: capped at ADD_ALL_LIMIT entries so an unfiltered search can't flood the library
++    fun loadAllForLibrary() {
++        val source = source ?: return
++        val listing = state.value.listing as? Listing.Search ?: return
++        addAllJob?.cancel()
++        addAllJob = viewModelScope.launchIO {
++            try {
++                setDialog(Dialog.AddAllLoading(0))
++                val found = mutableListOf<Manga>()
++                var page = 1
++                do {
++                    val result = source.getSearchManga(page++, listing.query.orEmpty(), listing.filters)
++                    found += networkToLocalManga(result.mangas.map { it.toDomainManga(source.id) })
++                    setDialog(Dialog.AddAllLoading(found.size))
++                } while (result.hasNextPage && found.size < ADD_ALL_LIMIT)
++
++                val toAdd = found.distinctBy { it.id }.filterNot { it.favorite }
++                val categories = getCategories()
++                when {
++                    toAdd.isEmpty() -> {
++                        setDialog(null)
++                        addAllEvents.send(AddAllEvent.Added(0))
++                    }
++                    categories.isEmpty() -> addAllToLibrary(toAdd, emptyList())
++                    else -> setDialog(Dialog.AddAllToLibrary(toAdd, categories.mapAsCheckboxState { false }))
++                }
++            } catch (e: CancellationException) {
++                throw e
++            } catch (e: Exception) {
++                setDialog(null)
++                addAllEvents.send(AddAllEvent.Failed(e.message.orEmpty()))
++            }
++        }
++    }
++
++    fun cancelLoadAll() {
++        addAllJob?.cancel()
++        setDialog(null)
++    }
++
++    fun addAllToLibrary(mangas: List<Manga>, categoryIds: List<Long>) {
++        setDialog(Dialog.AddAllLoading(mangas.size))
++        viewModelScope.launchIO {
++            mangas.forEach { manga ->
++                setMangaDefaultChapterFlags.await(manga)
++                addTracks.bindEnhancedTrackers(manga, sourceManager.getOrStub(manga.source))
++                setMangaCategories.await(mangaId = manga.id, categoryIds = categoryIds)
++            }
++            val now = Clock.System.now().toEpochMilliseconds()
++            updateManga.awaitAll(mangas.map { MangaUpdate(it.id) { favoriteAt = now } })
++            setDialog(null)
++            addAllEvents.send(AddAllEvent.Added(mangas.size))
++        }
++    }
++
++    sealed interface AddAllEvent {
++        data class Added(val count: Int) : AddAllEvent
++        data class Failed(val message: String) : AddAllEvent
++    }
++
+     fun openFilterSheet() {
+         setDialog(Dialog.Filter)
+     }
+@@ -355,6 +428,11 @@ class BrowseSourceViewModel(
+             val initialSelection: List<CheckboxState.State<Category>>,
+         ) : Dialog
+         data class Migrate(val target: Manga, val current: Manga) : Dialog
++        data class AddAllLoading(val count: Int) : Dialog
++        data class AddAllToLibrary(
++            val mangas: List<Manga>,
++            val initialSelection: List<CheckboxState.State<Category>>,
++        ) : Dialog
+     }
+ 
+     @Immutable
+@@ -368,3 +446,5 @@ class BrowseSourceViewModel(
+         val isUserQuery get() = listing is Listing.Search && !listing.query.isNullOrEmpty()
+     }
+ }
++
++private const val ADD_ALL_LIMIT = 2000
+diff --git a/app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/globalsearch/SearchViewModel.kt b/app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/globalsearch/SearchViewModel.kt
+index de2a7fc..b86e9ff 100644
+--- a/app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/globalsearch/SearchViewModel.kt
++++ b/app/src/main/java/eu/kanade/tachiyomi/ui/browse/source/globalsearch/SearchViewModel.kt
+@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
+ import eu.kanade.domain.source.service.SourcePreferences
+ import eu.kanade.tachiyomi.extension.ExtensionManager
+ import eu.kanade.tachiyomi.source.Source
++import eu.kanade.tachiyomi.source.model.SManga
+ import kotlinx.coroutines.Job
+ import kotlinx.coroutines.asCoroutineDispatcher
+ import kotlinx.coroutines.async
+@@ -125,6 +126,10 @@ abstract class SearchViewModel(
+         preferences.globalSearchFilterState.toggle()
+     }
+ 
++    protected open suspend fun searchSource(source: Source, query: String): List<SManga> {
++        return source.getSearchManga(1, query, source.getFilterList()).mangas
++    }
++
+     fun search() {
+         val query = state.value.searchQuery
+         val sourceFilter = state.value.sourceFilter
+@@ -163,11 +168,11 @@ abstract class SearchViewModel(
+                     }
+ 
+                     try {
+-                        val page = withContext(coroutineDispatcher) {
+-                            source.getSearchManga(1, query, source.getFilterList())
++                        val mangas = withContext(coroutineDispatcher) {
++                            searchSource(source, query)
+                         }
+ 
+-                        val titles = page.mangas
++                        val titles = mangas
+                             .map { it.toDomainManga(source.id) }
+                             .distinctBy { it.url }
+                             .let { networkToLocalManga(it) }
+diff --git a/app/src/main/java/eu/kanade/tachiyomi/ui/manga/MangaScreen.kt b/app/src/main/java/eu/kanade/tachiyomi/ui/manga/MangaScreen.kt
+index c2a9e31..5154029 100644
+--- a/app/src/main/java/eu/kanade/tachiyomi/ui/manga/MangaScreen.kt
++++ b/app/src/main/java/eu/kanade/tachiyomi/ui/manga/MangaScreen.kt
+@@ -111,6 +111,7 @@ class MangaScreen(
+             chapterSwipeStartAction = viewModel.chapterSwipeStartAction,
+             chapterSwipeEndAction = viewModel.chapterSwipeEndAction,
+             navigateUp = navigator::pop,
++            onChapterSearchQueryChange = viewModel::setChapterSearchQuery,
+             onChapterClicked = { openChapter(context, it) },
+             onDownloadChapter = viewModel::runChapterDownloadActions.takeIf { !successState.source.isLocalOrStub() },
+             onAddToLibraryClicked = {
+diff --git a/app/src/main/java/eu/kanade/tachiyomi/ui/manga/MangaViewModel.kt b/app/src/main/java/eu/kanade/tachiyomi/ui/manga/MangaViewModel.kt
+index 8262ccb..569cd82 100644
+--- a/app/src/main/java/eu/kanade/tachiyomi/ui/manga/MangaViewModel.kt
++++ b/app/src/main/java/eu/kanade/tachiyomi/ui/manga/MangaViewModel.kt
+@@ -1011,6 +1011,8 @@ class MangaViewModel(
+     fun toggleAllSelection(selected: Boolean) {
+         updateSuccessState { successState ->
+             val newChapters = successState.chapters.map {
++                // Don't select chapters hidden by a chapter search
++                if (selected && !successState.matchesChapterSearch(it.chapter)) return@map it
+                 selectedChapterIds.addOrRemove(it.id, selected)
+                 it.copy(selected = selected)
+             }
+@@ -1023,6 +1025,7 @@ class MangaViewModel(
+     fun invertSelection() {
+         updateSuccessState { successState ->
+             val newChapters = successState.chapters.map {
++                if (!successState.matchesChapterSearch(it.chapter)) return@map it
+                 selectedChapterIds.addOrRemove(it.id, !it.selected)
+                 it.copy(selected = !it.selected)
+             }
+@@ -1032,6 +1035,10 @@ class MangaViewModel(
+         }
+     }
+ 
++    fun setChapterSearchQuery(query: String?) {
++        updateSuccessState { it.copy(chapterSearchQuery = query) }
++    }
++
+     // Chapters list - end
+ 
+     // Track sheet - start
+@@ -1127,17 +1134,26 @@ class MangaViewModel(
+             val dialog: Dialog? = null,
+             val hasPromptedToAddBefore: Boolean = false,
+             val hideMissingChapters: Boolean = false,
++            val chapterSearchQuery: String? = null,
+         ) : State {
+             val processedChapters by lazy {
+                 chapters.applyFilters(manga).toList()
+             }
+ 
++            private val isSearchingChapters: Boolean
++                get() = !chapterSearchQuery.isNullOrBlank()
++
++            fun matchesChapterSearch(chapter: Chapter): Boolean {
++                return !isSearchingChapters || chapter.name.contains(chapterSearchQuery!!.trim(), ignoreCase = true)
++            }
++
+             val isAnySelected by lazy {
+                 chapters.fastAny { it.selected }
+             }
+ 
+             val chapterListItems by lazy {
+-                if (hideMissingChapters) {
++                // Missing-chapter gaps are meaningless in search results
++                if (hideMissingChapters || isSearchingChapters) {
+                     return@lazy processedChapters
+                 }
+ 
+@@ -1186,6 +1202,7 @@ class MangaViewModel(
+                     .filter { (chapter) -> applyFilter(unreadFilter) { !chapter.read } }
+                     .filter { (chapter) -> applyFilter(bookmarkedFilter) { chapter.bookmark } }
+                     .filter { applyFilter(downloadedFilter) { it.isDownloaded || isLocalManga } }
++                    .filter { (chapter) -> matchesChapterSearch(chapter) }
+                     .sortedWith { (chapter1), (chapter2) -> getChapterSort(manga).invoke(chapter1, chapter2) }
+             }
+         }
+diff --git a/app/src/main/java/mihon/domain/migration/models/MigrationFlag.kt b/app/src/main/java/mihon/domain/migration/models/MigrationFlag.kt
+index 101fb28..c1e3f11 100644
+--- a/app/src/main/java/mihon/domain/migration/models/MigrationFlag.kt
++++ b/app/src/main/java/mihon/domain/migration/models/MigrationFlag.kt
+@@ -8,6 +8,7 @@ enum class MigrationFlag(val flag: Int) {
+     CUSTOM_COVER(0b01000),
+     NOTES(0b100000),
+     REMOVE_DOWNLOAD(0b10000),
++    KEEP_TITLE(0b1000000),
+     ;
+ 
+     companion object {
+diff --git a/app/src/main/java/mihon/domain/migration/usecases/MigrateMangaUseCase.kt b/app/src/main/java/mihon/domain/migration/usecases/MigrateMangaUseCase.kt
+index 85c4d3b..640aefb 100644
+--- a/app/src/main/java/mihon/domain/migration/usecases/MigrateMangaUseCase.kt
++++ b/app/src/main/java/mihon/domain/migration/usecases/MigrateMangaUseCase.kt
+@@ -15,13 +15,19 @@ import tachiyomi.domain.category.interactor.GetCategories
+ import tachiyomi.domain.category.interactor.SetMangaCategories
+ import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
+ import tachiyomi.domain.chapter.interactor.UpdateChapter
++import tachiyomi.domain.chapter.model.Chapter
+ import tachiyomi.domain.chapter.model.ChapterUpdate
+ import tachiyomi.domain.manga.model.Manga
++import tachiyomi.domain.manga.model.MangaRemoteUpdate
+ import tachiyomi.domain.manga.model.MangaUpdate
++import tachiyomi.domain.manga.repository.MangaRepository
+ import tachiyomi.domain.source.service.SourceManager
+ import tachiyomi.domain.track.interactor.GetTracks
+ import tachiyomi.domain.track.interactor.UpsertTrack
++import java.text.Normalizer
++import kotlin.math.abs
+ import kotlin.time.Clock
++import kotlin.time.Duration.Companion.days
+ 
+ @Inject
+ class MigrateMangaUseCase(
+@@ -38,16 +44,21 @@ class MigrateMangaUseCase(
+     private val upsertTrack: UpsertTrack,
+     private val coverCache: CoverCache,
+     private val updateMangaFromRemote: UpdateMangaFromRemote,
++    private val mangaRepository: MangaRepository,
+ ) {
+     private val enhancedServices by lazy { trackerManager.trackers.filterIsInstance<EnhancedTracker>() }
+ 
+-    suspend operator fun invoke(current: Manga, target: Manga, replace: Boolean) {
++    /**
++     * @param categoryIds categories picked by the user for [target]; when null, [MigrationFlag.CATEGORY]
++     * decides whether [current]'s categories are copied.
++     */
++    suspend operator fun invoke(current: Manga, target: Manga, replace: Boolean, categoryIds: List<Long>? = null) {
+         val targetSource = sourceManager.get(target.source) ?: return
+         val currentSource = sourceManager.get(current.source)
+         val flags = sourcePreferences.migrationFlags.get()
+ 
+         try {
+-            updateMangaFromRemote(target, fetchChapters = true).getOrThrow()
++            val refreshedTarget = updateMangaFromRemote(target, fetchChapters = true).getOrThrow().manga
+ 
+             // Update chapters read, bookmark and dateFetch
+             if (MigrationFlag.CHAPTER in flags) {
+@@ -58,11 +69,18 @@ class MigrateMangaUseCase(
+                     .filter { it.read }
+                     .maxOfOrNull { it.chapterNumber }
+ 
++                // Match by post URL / name for sources whose chapter names carry no parsable number (e.g. posts)
++                val nameMatches = matchChapters(mangaChapters, prevMangaChapters)
++
+                 val chapterUpdates = mangaChapters
+-                    .filter { it.isRecognizedNumber }
+                     .map { mangaChapter ->
+-                        val prevChapter = prevMangaChapters
+-                            .find { it.isRecognizedNumber && it.chapterNumber == mangaChapter.chapterNumber }
++                        val nameMatch = nameMatches[mangaChapter.id]
++                        val prevChapter = nameMatch
++                            ?: prevMangaChapters.find {
++                                mangaChapter.isRecognizedNumber &&
++                                    it.isRecognizedNumber &&
++                                    it.chapterNumber == mangaChapter.chapterNumber
++                            }
+ 
+                         ChapterUpdate(mangaChapter.id) {
+                             if (prevChapter != null) {
+@@ -70,18 +88,24 @@ class MigrateMangaUseCase(
+                                 bookmark = prevChapter.bookmark
+                             }
+ 
+-                            if (maxChapterRead != null && mangaChapter.chapterNumber <= maxChapterRead) {
+-                                read = true
++                            val isRead = if (nameMatch != null) {
++                                nameMatch.read
++                            } else {
++                                mangaChapter.isRecognizedNumber &&
++                                    maxChapterRead != null &&
++                                    mangaChapter.chapterNumber <= maxChapterRead
+                             }
++                            if (isRead) read = true
+                         }
+                     }
+                 updateChapter.awaitAll(chapterUpdates)
+             }
+ 
+             // Update categories
+-            if (MigrationFlag.CATEGORY in flags) {
+-                val categoryIds = getCategories.await(current.id).map { it.id }
++            if (categoryIds != null) {
+                 setMangaCategories.await(target.id, categoryIds)
++            } else if (MigrationFlag.CATEGORY in flags) {
++                setMangaCategories.await(target.id, getCategories.await(current.id).map { it.id })
+             }
+ 
+             // Update track
+@@ -122,6 +146,26 @@ class MigrateMangaUseCase(
+             }
+ 
+             updateManga.awaitAll(listOfNotNull(currentMangaUpdate, targetMangaUpdate))
++
++            if (MigrationFlag.KEEP_TITLE in flags && refreshedTarget.title != current.title) {
++                // Only the title changes; null fields are left as they are
++                mangaRepository.updateRemote(
++                    MangaRemoteUpdate(
++                        id = target.id,
++                        title = current.title,
++                        author = null,
++                        artist = null,
++                        description = null,
++                        genre = null,
++                        status = refreshedTarget.status,
++                        thumbnailUrl = null,
++                        updateStrategy = refreshedTarget.updateStrategy,
++                        memo = refreshedTarget.memo,
++                        initialized = refreshedTarget.initialized,
++                        coverLastModified = null,
++                    ),
++                )
++            }
+         } catch (e: Throwable) {
+             if (e is CancellationException) {
+                 throw e
+@@ -129,3 +173,53 @@ class MigrateMangaUseCase(
+         }
+     }
+ }
++
++/** Sources may record a post's time differently (time zone, precision), so dates within this window match. */
++private val UPLOAD_DATE_TOLERANCE_MS = 1.days.inWholeMilliseconds
++
++/** Post URL shared by Kemono-style archives, e.g. `/patreon/user/17779781/post/148187606`. */
++internal val KEMONO_POST_URL = Regex("""/[^/]+/user/[^/]+/post/[^/]+""")
++
++/**
++ * Maps target chapter id to the matching previous chapter:
++ * 1. Kemono-style post URLs, which are identical across archives, match exactly.
++ * 2. When either side has no post URL: the same normalized name and an upload date within
++ *    [UPLOAD_DATE_TOLERANCE_MS].
++ *    Closest dates are paired first, so same-named posts don't all inherit one post's read state.
++ * Each chapter matches at most once.
++ */
++internal fun matchChapters(targetChapters: List<Chapter>, prevChapters: List<Chapter>): Map<Long, Chapter> {
++    val prevChaptersByPostUrl = prevChapters.filter { KEMONO_POST_URL.matches(it.url) }.associateBy { it.url }
++    val matches = targetChapters
++        .mapNotNull { chapter -> prevChaptersByPostUrl[chapter.url]?.let { chapter.id to it } }
++        .toMap(mutableMapOf())
++    val usedPrevIds = matches.values.mapTo(mutableSetOf()) { it.id }
++
++    val prevChaptersByName = prevChapters.groupBy { it.name.normalizeForMatch() }
++    val candidates = targetChapters
++        .flatMap { chapter ->
++            prevChaptersByName[chapter.name.normalizeForMatch()].orEmpty().map { chapter to it }
++        }
++        // Two different post URLs are two different posts, whatever their names and dates
++        .filterNot { (chapter, prev) -> KEMONO_POST_URL.matches(chapter.url) && KEMONO_POST_URL.matches(prev.url) }
++        .filter { (chapter, prev) -> abs(chapter.dateUpload - prev.dateUpload) <= UPLOAD_DATE_TOLERANCE_MS }
++        .sortedBy { (chapter, prev) -> abs(chapter.dateUpload - prev.dateUpload) }
++
++    for ((chapter, prev) in candidates) {
++        if (chapter.id in matches || prev.id in usedPrevIds) continue
++        matches[chapter.id] = prev
++        usedPrevIds += prev.id
++    }
++    return matches
++}
++
++private val invisibleChars = Regex("[\\u200B-\\u200D\\u2060\\uFEFF]")
++private val whitespace = Regex("\\s+")
++
++/** NFKC (folds NBSP/full-width forms), drop zero-width chars, collapse whitespace, trim, lowercase. */
++internal fun String.normalizeForMatch(): String =
++    Normalizer.normalize(this, Normalizer.Form.NFKC)
++        .replace(invisibleChars, "")
++        .replace(whitespace, " ")
++        .trim()
++        .lowercase()
+diff --git a/app/src/main/java/mihon/feature/common/utils/MigrationFlag.kt b/app/src/main/java/mihon/feature/common/utils/MigrationFlag.kt
+index 77154ca..e142ecc 100644
+--- a/app/src/main/java/mihon/feature/common/utils/MigrationFlag.kt
++++ b/app/src/main/java/mihon/feature/common/utils/MigrationFlag.kt
+@@ -11,5 +11,6 @@ fun MigrationFlag.getLabel(): StringResource {
+         MigrationFlag.CUSTOM_COVER -> MR.strings.custom_cover
+         MigrationFlag.NOTES -> MR.strings.action_notes
+         MigrationFlag.REMOVE_DOWNLOAD -> MR.strings.delete_downloaded
++        MigrationFlag.KEEP_TITLE -> MR.strings.migration_keep_title
+     }
+ }
+diff --git a/app/src/main/java/mihon/feature/migration/dialog/MigrateMangaDialog.kt b/app/src/main/java/mihon/feature/migration/dialog/MigrateMangaDialog.kt
+index 699e057..eadbbef 100644
+--- a/app/src/main/java/mihon/feature/migration/dialog/MigrateMangaDialog.kt
++++ b/app/src/main/java/mihon/feature/migration/dialog/MigrateMangaDialog.kt
+@@ -20,6 +20,8 @@ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.util.fastForEach
+ import androidx.lifecycle.ViewModel
+ import cafe.adriel.voyager.core.screen.Screen
++import cafe.adriel.voyager.navigator.LocalNavigator
++import cafe.adriel.voyager.navigator.currentOrThrow
+ import dev.zacsweers.metro.AppScope
+ import dev.zacsweers.metro.ContributesIntoMap
+ import dev.zacsweers.metro.Inject
+@@ -28,16 +30,22 @@ import dev.zacsweers.metrox.viewmodel.ViewModelKey
+ import dev.zacsweers.metrox.viewmodel.metroViewModel
+ import eu.kanade.domain.manga.model.hasCustomCover
+ import eu.kanade.domain.source.service.SourcePreferences
++import eu.kanade.presentation.category.components.ChangeCategoryDialog
+ import eu.kanade.tachiyomi.data.cache.CoverCache
+ import eu.kanade.tachiyomi.data.download.DownloadManager
++import eu.kanade.tachiyomi.ui.category.CategoryScreen
+ import kotlinx.coroutines.flow.MutableStateFlow
+ import kotlinx.coroutines.flow.StateFlow
+ import kotlinx.coroutines.flow.update
+ import mihon.domain.migration.models.MigrationFlag
+ import mihon.domain.migration.usecases.MigrateMangaUseCase
+ import mihon.feature.common.utils.getLabel
++import tachiyomi.core.common.preference.CheckboxState
++import tachiyomi.core.common.preference.mapAsCheckboxState
+ import tachiyomi.core.common.util.lang.launchIO
+ import tachiyomi.core.common.util.lang.withUIContext
++import tachiyomi.domain.category.interactor.GetCategories
++import tachiyomi.domain.category.model.Category
+ import tachiyomi.domain.manga.model.Manga
+ import tachiyomi.i18n.MR
+ import tachiyomi.presentation.core.components.LabeledCheckbox
+@@ -70,6 +78,25 @@ internal fun Screen.MigrateMangaDialog(
+         return
+     }
+ 
++    val navigator = LocalNavigator.currentOrThrow
++    fun migrate(replace: Boolean, categoryIds: List<Long>? = null) {
++        scope.launchIO {
++            viewModel.migrateManga(replace, categoryIds)
++            withUIContext { onComplete() }
++        }
++    }
++
++    val categoryPicker = state.categoryPicker
++    if (categoryPicker != null) {
++        ChangeCategoryDialog(
++            initialSelection = categoryPicker.initialSelection,
++            onDismissRequest = viewModel::dismissCategoryPicker,
++            onEditCategories = { navigator.push(CategoryScreen()) },
++            onConfirm = { include, _ -> migrate(categoryPicker.replace, include) },
++        )
++        return
++    }
++
+     AlertDialog(
+         onDismissRequest = onDismissRequest,
+         title = {
+@@ -105,20 +132,14 @@ internal fun Screen.MigrateMangaDialog(
+ 
+                 TextButton(
+                     onClick = {
+-                        scope.launchIO {
+-                            viewModel.migrateManga(replace = false)
+-                            withUIContext { onComplete() }
+-                        }
++                        scope.launchIO { if (!viewModel.showCategoryPickerIfNeeded(replace = false)) migrate(false) }
+                     },
+                 ) {
+                     Text(text = stringResource(MR.strings.copy))
+                 }
+                 TextButton(
+                     onClick = {
+-                        scope.launchIO {
+-                            viewModel.migrateManga(replace = true)
+-                            withUIContext { onComplete() }
+-                        }
++                        scope.launchIO { if (!viewModel.showCategoryPickerIfNeeded(replace = true)) migrate(true) }
+                     },
+                 ) {
+                     Text(text = stringResource(MR.strings.migrate))
+@@ -136,6 +157,7 @@ class MigrateDialogViewModel(
+     private val coverCache: CoverCache,
+     private val downloadManager: DownloadManager,
+     private val migrateManga: MigrateMangaUseCase,
++    private val getCategories: GetCategories,
+ ) : ViewModel() {
+ 
+     val state: StateFlow<MigrateDialogViewModel.State>
+@@ -150,6 +172,7 @@ class MigrateDialogViewModel(
+                     MigrationFlag.CUSTOM_COVER -> current.hasCustomCover(coverCache)
+                     MigrationFlag.NOTES -> current.notes.isNotBlank()
+                     MigrationFlag.REMOVE_DOWNLOAD -> downloadManager.getDownloadCount(current) > 0
++                    MigrationFlag.KEEP_TITLE -> current.title != target.title
+                 }
+                 if (applicable) add(it)
+             }
+@@ -174,16 +197,44 @@ class MigrateDialogViewModel(
+         }
+     }
+ 
+-    suspend fun migrateManga(replace: Boolean) {
++    /**
++     * With "Categories" (copy) unchecked, let the user pick the target's categories instead.
++     * @return true if the picker is shown and the migration waits for it.
++     */
++    suspend fun showCategoryPickerIfNeeded(replace: Boolean): Boolean {
++        val currentState = state.value
++        val current = currentState.current ?: return false
++        if (MigrationFlag.CATEGORY in currentState.selectedFlags) return false
++        val categories = getCategories.await().filterNot { it.isSystemCategory }
++        if (categories.isEmpty()) return false
++        val currentIds = getCategories.await(current.id).map { it.id }
++        state.update {
++            it.copy(
++                categoryPicker = CategoryPicker(replace, categories.mapAsCheckboxState { cat -> cat.id in currentIds }),
++            )
++        }
++        return true
++    }
++
++    fun dismissCategoryPicker() {
++        state.update { it.copy(categoryPicker = null) }
++    }
++
++    suspend fun migrateManga(replace: Boolean, categoryIds: List<Long>? = null) {
+         val currentState = state.value
+         val current = currentState.current ?: return
+         val target = currentState.target ?: return
+         sourcePreference.migrationFlags.set(currentState.selectedFlags)
+-        state.update { it.copy(isMigrating = true) }
+-        migrateManga(current, target, replace)
++        state.update { it.copy(isMigrating = true, categoryPicker = null) }
++        migrateManga(current, target, replace, categoryIds)
+         state.update { it.copy(isMigrating = false, isMigrated = true) }
+     }
+ 
++    data class CategoryPicker(
++        val replace: Boolean,
++        val initialSelection: List<CheckboxState<Category>>,
++    )
++
+     data class State(
+         val current: Manga? = null,
+         val target: Manga? = null,
+@@ -191,5 +242,6 @@ class MigrateDialogViewModel(
+         val selectedFlags: Set<MigrationFlag> = emptySet(),
+         val isMigrating: Boolean = false,
+         val isMigrated: Boolean = false,
++        val categoryPicker: CategoryPicker? = null,
+     )
+ }
+diff --git a/app/src/main/java/mihon/feature/migration/list/CreatorUrl.kt b/app/src/main/java/mihon/feature/migration/list/CreatorUrl.kt
+new file mode 100644
+index 0000000..8ef13be
+--- /dev/null
++++ b/app/src/main/java/mihon/feature/migration/list/CreatorUrl.kt
+@@ -0,0 +1,30 @@
++package mihon.feature.migration.list
++
++import eu.kanade.tachiyomi.source.Source
++import eu.kanade.tachiyomi.source.model.SManga
++import eu.kanade.tachiyomi.source.online.HttpSource
++import kotlinx.coroutines.CancellationException
++
++/** Creator URL used by Kemono-style archives, e.g. `/patreon/user/17779781`. */
++internal val KEMONO_CREATOR_URL = Regex("""/[^/]+/user/[^/]+""")
++
++/**
++ * Kemono-style archives (e.g. Kemono and Pawchive) share creator URLs but show different creator names,
++ * so a title search can't find the entry. Sources built on keiyoushi's KeiSource resolve a URL typed into
++ * search: try the creator's page URL and Pawchive's `/creators/<id>` form, and only trust a result that
++ * points at the exact same creator.
++ */
++internal suspend fun Source.findCreatorByUrl(creatorUrl: String): SManga? {
++    if (!KEMONO_CREATOR_URL.matches(creatorUrl)) return null
++    val baseUrl = (this as? HttpSource)?.baseUrl ?: return null
++    val id = creatorUrl.substringAfterLast('/')
++    return listOf("$baseUrl$creatorUrl", "$baseUrl/creators/$id").firstNotNullOfOrNull { query ->
++        try {
++            getSearchManga(1, query, getFilterList()).mangas.firstOrNull { it.url == creatorUrl }
++        } catch (e: CancellationException) {
++            throw e
++        } catch (_: Exception) {
++            null
++        }
++    }
++}
+diff --git a/app/src/main/java/mihon/feature/migration/list/MigrationListScreen.kt b/app/src/main/java/mihon/feature/migration/list/MigrationListScreen.kt
+index 82d5cc8..1fc6a21 100644
+--- a/app/src/main/java/mihon/feature/migration/list/MigrationListScreen.kt
++++ b/app/src/main/java/mihon/feature/migration/list/MigrationListScreen.kt
+@@ -9,6 +9,8 @@ import androidx.compose.runtime.getValue
+ import androidx.compose.ui.platform.LocalContext
+ import cafe.adriel.voyager.navigator.LocalNavigator
+ import cafe.adriel.voyager.navigator.currentOrThrow
++import eu.kanade.presentation.category.components.ChangeCategoryDialog
++import eu.kanade.tachiyomi.ui.category.CategoryScreen
+ import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
+ import eu.kanade.presentation.util.Screen
+ import eu.kanade.tachiyomi.ui.browse.migration.search.MigrateSearchScreen
+@@ -65,8 +67,8 @@ class MigrationListScreen(private val mangaIds: Collection<Long>, private val ex
+                 navigator push MigrateSearchScreen(migrationItem.manga.id)
+             },
+             onSkip = { viewModel.removeManga(it) },
+-            onMigrate = { viewModel.migrateNow(mangaId = it, replace = true) },
+-            onCopy = { viewModel.migrateNow(mangaId = it, replace = false) },
++            onMigrate = { viewModel.requestMigration(replace = true, mangaId = it) },
++            onCopy = { viewModel.requestMigration(replace = false, mangaId = it) },
+             openMigrationDialog = viewModel::showMigrateDialog,
+         )
+ 
+@@ -77,13 +79,7 @@ class MigrationListScreen(private val mangaIds: Collection<Long>, private val ex
+                     copy = dialog.copy,
+                     totalCount = dialog.totalCount,
+                     skippedCount = dialog.skippedCount,
+-                    onMigrate = {
+-                        if (dialog.copy) {
+-                            viewModel.copyMangas()
+-                        } else {
+-                            viewModel.migrateMangas()
+-                        }
+-                    },
++                    onMigrate = { viewModel.requestMigration(replace = !dialog.copy) },
+                 )
+             }
+             is MigrationListViewModel.Dialog.Progress -> {
+@@ -98,6 +94,14 @@ class MigrationListScreen(private val mangaIds: Collection<Long>, private val ex
+                     exitMigration = navigator::pop,
+                 )
+             }
++            is MigrationListViewModel.Dialog.ChooseCategories -> {
++                ChangeCategoryDialog(
++                    initialSelection = dialog.initialSelection,
++                    onDismissRequest = viewModel::dismissDialog,
++                    onEditCategories = { navigator.push(CategoryScreen()) },
++                    onConfirm = { include, _ -> viewModel.startMigration(dialog.replace, dialog.mangaId, include) },
++                )
++            }
+             null -> Unit
+         }
+ 
+diff --git a/app/src/main/java/mihon/feature/migration/list/MigrationListViewModel.kt b/app/src/main/java/mihon/feature/migration/list/MigrationListViewModel.kt
+index 3c8b0a9..a275db9 100644
+--- a/app/src/main/java/mihon/feature/migration/list/MigrationListViewModel.kt
++++ b/app/src/main/java/mihon/feature/migration/list/MigrationListViewModel.kt
+@@ -29,14 +29,20 @@ import kotlinx.coroutines.isActive
+ import kotlinx.coroutines.sync.Semaphore
+ import kotlinx.coroutines.sync.withPermit
+ import logcat.LogPriority
++import mihon.domain.manga.model.toDomainManga
++import mihon.domain.migration.models.MigrationFlag
+ import mihon.domain.migration.usecases.MigrateMangaUseCase
+ import mihon.domain.source.interactor.UpdateMangaFromRemote
+ import mihon.feature.migration.list.models.MigratingManga
+ import mihon.feature.migration.list.models.MigratingManga.SearchResult
+ import mihon.feature.migration.list.search.SmartSourceSearchEngine
++import tachiyomi.core.common.preference.CheckboxState
++import tachiyomi.core.common.preference.mapAsCheckboxState
+ import tachiyomi.core.common.util.lang.launchIO
+ import tachiyomi.core.common.util.lang.withUIContext
+ import tachiyomi.core.common.util.system.logcat
++import tachiyomi.domain.category.interactor.GetCategories
++import tachiyomi.domain.category.model.Category
+ import tachiyomi.domain.chapter.interactor.GetChaptersByMangaId
+ import tachiyomi.domain.manga.interactor.GetManga
+ import tachiyomi.domain.manga.interactor.NetworkToLocalManga
+@@ -54,6 +60,7 @@ class MigrationListViewModel(
+     private val getChaptersByMangaId: GetChaptersByMangaId,
+     private val migrateManga: MigrateMangaUseCase,
+     private val updateMangaFromRemote: UpdateMangaFromRemote,
++    private val getCategories: GetCategories,
+ ) : ViewModel() {
+ 
+     val state: StateFlow<MigrationListViewModel.State>
+@@ -191,6 +198,7 @@ class MigrationListViewModel(
+         source: Source,
+         deepSearchMode: Boolean,
+     ): Pair<Manga, ChapterInfo>? {
++        matchByCreatorUrl(manga, source)?.let { return it }
+         return try {
+             val searchResult = if (deepSearchMode) {
+                 smartSearchEngine.deepSearch(source, manga.title)
+@@ -214,6 +222,34 @@ class MigrationListViewModel(
+         }
+     }
+ 
++    /**
++     * Match a Kemono-style creator by URL instead of title (see [findCreatorByUrl]).
++     * Accepted only if its chapters actually load on the target source.
++     */
++    // ponytail: URL-shape heuristic for Kemono-style sites; widen the pattern if other mirrors use another scheme
++    private suspend fun matchByCreatorUrl(manga: Manga, source: Source): Pair<Manga, ChapterInfo>? {
++        if (source.id == manga.source || !KEMONO_CREATOR_URL.matches(manga.url)) return null
++        return try {
++            // Prefer the target's own entry (its creator name and cover); fall back to reusing ours
++            val targetManga = source.findCreatorByUrl(manga.url)?.toDomainManga(source.id)
++                ?: Manga.create().copy(
++                    source = source.id,
++                    url = manga.url,
++                    title = manga.title,
++                    thumbnailUrl = manga.thumbnailUrl,
++                )
++            val localManga = networkToLocalManga(targetManga)
++            updateMangaFromRemote(localManga, fetchChapters = true).getOrThrow()
++            val chapterInfo = getChapterInfo(localManga.id)
++            if (chapterInfo.chapterCount == 0) null else localManga to chapterInfo
++        } catch (e: CancellationException) {
++            throw e
++        } catch (e: Exception) {
++            logcat(LogPriority.DEBUG, e)
++            null
++        }
++    }
++
+     private suspend fun updateMigrationProgress() {
+         state.update { state ->
+             state.copy(
+@@ -255,15 +291,32 @@ class MigrationListViewModel(
+         }
+     }
+ 
+-    fun migrateMangas() {
+-        migrateMangas(replace = true)
++    /**
++     * With "Categories" (copy) unchecked, ask which categories the migrated entries go in first.
++     * @param mangaId migrate only this entry; all entries when null.
++     */
++    fun requestMigration(replace: Boolean, mangaId: Long? = null) {
++        viewModelScope.launchIO {
++            val categories = if (MigrationFlag.CATEGORY in preferences.migrationFlags.get()) {
++                emptyList()
++            } else {
++                getCategories.await().filterNot { it.isSystemCategory }
++            }
++            if (categories.isEmpty()) {
++                startMigration(replace, mangaId, categoryIds = null)
++            } else {
++                state.update {
++                    it.copy(dialog = Dialog.ChooseCategories(replace, mangaId, categories.mapAsCheckboxState { false }))
++                }
++            }
++        }
+     }
+ 
+-    fun copyMangas() {
+-        migrateMangas(replace = false)
++    fun startMigration(replace: Boolean, mangaId: Long?, categoryIds: List<Long>?) {
++        if (mangaId != null) migrateNow(mangaId, replace, categoryIds) else migrateMangas(replace, categoryIds)
+     }
+ 
+-    private fun migrateMangas(replace: Boolean) {
++    private fun migrateMangas(replace: Boolean, categoryIds: List<Long>?) {
+         migrateJob = viewModelScope.launchIO {
+             state.update { it.copy(dialog = Dialog.Progress(0f)) }
+             val items = items
+@@ -279,7 +332,7 @@ class MigrationListViewModel(
+                             }
+                         }
+                         if (target != null) {
+-                            migrateManga(current = manga.manga, target = target, replace = replace)
++                            migrateManga(current = manga.manga, target = target, replace = replace, categoryIds = categoryIds)
+                         }
+                     } catch (e: Exception) {
+                         if (e is CancellationException) throw e
+@@ -307,11 +360,12 @@ class MigrationListViewModel(
+         navigateBackChannel.send(Unit)
+     }
+ 
+-    fun migrateNow(mangaId: Long, replace: Boolean) {
++    private fun migrateNow(mangaId: Long, replace: Boolean, categoryIds: List<Long>?) {
+         viewModelScope.launchIO {
++            state.update { it.copy(dialog = null) }
+             val manga = items.find { it.manga.id == mangaId } ?: return@launchIO
+             val target = (manga.searchResult.value as? SearchResult.Success)?.manga ?: return@launchIO
+-            migrateManga(current = manga.manga, target = target, replace = replace)
++            migrateManga(current = manga.manga, target = target, replace = replace, categoryIds = categoryIds)
+ 
+             removeManga(mangaId)
+         }
+@@ -367,6 +421,11 @@ class MigrationListViewModel(
+         data class Migrate(val copy: Boolean, val totalCount: Int, val skippedCount: Int) : Dialog
+         data class Progress(@FloatRange(0.0, 1.0) val progress: Float) : Dialog
+         data object Exit : Dialog
++        data class ChooseCategories(
++            val replace: Boolean,
++            val mangaId: Long?,
++            val initialSelection: List<CheckboxState<Category>>,
++        ) : Dialog
+     }
+ 
+     data class State(
+diff --git a/app/src/test/java/mihon/domain/migration/usecases/NormalizeForMatchTest.kt b/app/src/test/java/mihon/domain/migration/usecases/NormalizeForMatchTest.kt
+new file mode 100644
+index 0000000..41bc132
+--- /dev/null
++++ b/app/src/test/java/mihon/domain/migration/usecases/NormalizeForMatchTest.kt
+@@ -0,0 +1,75 @@
++package mihon.domain.migration.usecases
++
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertNotEquals
++import org.junit.jupiter.api.Test
++import tachiyomi.domain.chapter.model.Chapter
++
++class NormalizeForMatchTest {
++
++    @Test
++    fun `visually identical names match`() {
++        val expected = "commission for someone (part 2)"
++        listOf(
++            "Commission for Someone (Part 2)",
++            "  Commission for Someone (Part 2)\n",
++            "Commission for  Someone (Part 2)",
++            "Commission for​ Someone (Part 2)",
++            "﻿COMMISSION FOR SOMEONE (PART 2)",
++            "Commission for Someone （Part 2）",
++        ).forEach { assertEquals(expected, it.normalizeForMatch(), it) }
++    }
++
++    @Test
++    fun `different names do not match`() {
++        assertNotEquals("Part 1".normalizeForMatch(), "Part 2".normalizeForMatch())
++    }
++
++    @Test
++    fun `same-named posts match only on the same posted date`() {
++        val day = 86_400_000L
++        fun chapter(id: Long, name: String, date: Long, read: Boolean = false) =
++            Chapter.create().copy(id = id, name = name, dateUpload = date, read = read)
++
++        val prev = listOf(
++            chapter(1, "WIP", 10 * day, read = true),
++            chapter(2, "WIP", 20 * day),
++            chapter(3, "Sketch", 30 * day, read = true),
++            chapter(4, "Old post", 40 * day, read = true),
++        )
++        val target = listOf(
++            chapter(11, "WIP", 11 * day), // a day after the read WIP; must not steal its match
++            chapter(10, "wip ", 10 * day),
++            chapter(12, "WIP", 20 * day + 3_600_000), // same day, different hour
++            chapter(13, "WIP", 50 * day), // no counterpart
++            chapter(14, "Sketch", 30 * day),
++            chapter(15, "Old post", 45 * day), // same name, different date
++        )
++
++        val matches = matchChapters(target, prev)
++
++        assertEquals(mapOf(10L to 1L, 12L to 2L, 14L to 3L), matches.mapValues { it.value.id })
++        assertEquals(listOf(10L, 14L), target.filter { matches[it.id]?.read == true }.map { it.id })
++    }
++
++    @Test
++    fun `identical post urls match regardless of name and date`() {
++        fun chapter(id: Long, url: String, name: String, date: Long, read: Boolean = false) =
++            Chapter.create().copy(id = id, url = url, name = name, dateUpload = date, read = read)
++
++        val prev = listOf(
++            chapter(1, "/patreon/user/17779781/post/148187606", "Old title", 0, read = true),
++            chapter(2, "/patreon/user/17779781/post/2", "WIP", 5_000, read = true),
++            chapter(3, "/chapter/7", "Chapter 7", 9_000, read = true),
++        )
++        val target = listOf(
++            chapter(10, "/patreon/user/17779781/post/148187606", "Renamed title", 999_999_999),
++            chapter(11, "/patreon/user/17779781/post/3", "WIP", 5_000), // different post, same name and date
++            chapter(12, "/chapter/7", "Something else", 123_456_789), // non-post urls never match by url
++        )
++
++        val matches = matchChapters(target, prev)
++
++        assertEquals(mapOf(10L to 1L), matches.mapValues { it.value.id })
++    }
++}
+diff --git a/app/src/test/java/mihon/feature/migration/list/KemonoCreatorUrlTest.kt b/app/src/test/java/mihon/feature/migration/list/KemonoCreatorUrlTest.kt
+new file mode 100644
+index 0000000..569c577
+--- /dev/null
++++ b/app/src/test/java/mihon/feature/migration/list/KemonoCreatorUrlTest.kt
+@@ -0,0 +1,18 @@
++package mihon.feature.migration.list
++
++import org.junit.jupiter.api.Assertions.assertFalse
++import org.junit.jupiter.api.Assertions.assertTrue
++import org.junit.jupiter.api.Test
++
++class KemonoCreatorUrlTest {
++
++    @Test
++    fun `matches creator urls only`() {
++        assertTrue(KEMONO_CREATOR_URL.matches("/patreon/user/17779781"))
++        assertTrue(KEMONO_CREATOR_URL.matches("/fanbox/user/abc123"))
++
++        assertFalse(KEMONO_CREATOR_URL.matches("/patreon/user/17779781/post/1"))
++        assertFalse(KEMONO_CREATOR_URL.matches("/manga/12345"))
++        assertFalse(KEMONO_CREATOR_URL.matches("https://kemono.cr/patreon/user/17779781"))
++    }
++}
+diff --git a/i18n/src/commonMain/moko-resources/base/strings.xml b/i18n/src/commonMain/moko-resources/base/strings.xml
+index 0917e50..5e5d269 100644
+--- a/i18n/src/commonMain/moko-resources/base/strings.xml
++++ b/i18n/src/commonMain/moko-resources/base/strings.xml
+@@ -805,6 +805,11 @@
+     <string name="download_unread">Unread</string>
+     <string name="download_bookmarked">Bookmarked</string>
+     <string name="custom_cover">Custom cover</string>
++    <string name="migration_keep_title">Keep current title</string>
++    <string name="action_add_all_to_library">Add all to library</string>
++    <string name="add_all_loading">Loading entries… %d found</string>
++    <string name="add_all_added">Added %d entries to library</string>
++    <string name="add_all_failed">Couldn\'t load entries: %s</string>
+     <string name="manga_cover">Cover</string>
+     <string name="cover_saved">Cover saved</string>
+     <string name="error_saving_cover">Error saving cover</string>
